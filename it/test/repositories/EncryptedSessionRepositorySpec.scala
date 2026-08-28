@@ -55,7 +55,7 @@ class EncryptedSessionRepositorySpec
   private val userAnswers = UserAnswers("id", Json.obj("foo" -> "bar"), Instant.ofEpochSecond(1))
 
   private val mockAppConfig = mock[FrontendAppConfig]
-  when(mockAppConfig.cacheTtl) thenReturn 1
+  when(mockAppConfig.cacheTtl) thenReturn 1L
   when(mockAppConfig.mongoEncryptionEnabled) thenReturn true
 
   private val aesKey = {
@@ -73,11 +73,12 @@ class EncryptedSessionRepositorySpec
   implicit val sensitiveFormat: Format[SensitiveJsObject] =
     JsonEncryption.sensitiveEncrypterDecrypter(SensitiveJsObject.apply)
 
-  override protected val repository = new SessionRepository(
-    mongoComponent = mongoComponent,
-    appConfig = mockAppConfig,
-    clock = stubClock
-  )
+  override protected val repository: SessionRepository =
+    new SessionRepository(
+      mongoComponent = mongoComponent,
+      appConfig = mockAppConfig,
+      clock = stubClock
+    )
 
   ".set" - {
 

@@ -172,7 +172,6 @@ class AuditConnectorSpec
         exception.statusCode mustBe INTERNAL_SERVER_ERROR
       }
     }
-
   }
 
 }
