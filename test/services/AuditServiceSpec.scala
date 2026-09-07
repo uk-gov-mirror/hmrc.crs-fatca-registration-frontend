@@ -774,6 +774,86 @@ class AuditServiceSpec
 
         result.firstContactTelephone mustBe None
       }
+
+      "must determine organisation from reporter type rather than affinity group" in {
+
+        val address =
+          Address(
+            addressLine1 = "1 Business Street",
+            addressLine2 = Some("Business Area"),
+            addressLine3 = "Paris",
+            addressLine4 = Some("Ile-de-France"),
+            postCode = Some("75001"),
+            country = Country(
+              code = "FR",
+              description = "France"
+            )
+          )
+
+        val userAnswers =
+          organisationWithoutIdUserAnswers(address)
+
+        val result =
+          sendAndCapture(
+            userAnswers = userAnswers,
+            affinityGroup = AffinityGroup.Individual
+          )
+
+        result.affinityType mustBe
+          AffinityGroup.Individual.toString
+
+        result.registeringAs mustBe
+          "Organisation"
+
+        result.registrationType mustBe
+          "OrgWithoutID"
+
+        result.firstContactName mustBe
+          organisationContactName
+
+        result.firstContactEmail mustBe
+          organisationContactEmail
+      }
+
+      "must determine individual from reporter type rather than affinity group" in {
+
+        val address =
+          Address(
+            addressLine1 = "1 Test Street",
+            addressLine2 = Some("Test Area"),
+            addressLine3 = "London",
+            addressLine4 = None,
+            postCode = Some("AA1 1AA"),
+            country = Country.GB
+          )
+
+        val userAnswers =
+          individualWithoutIdUserAnswers(
+            address = address,
+            livesInUK = true
+          )
+
+        val result =
+          sendAndCapture(
+            userAnswers = userAnswers,
+            affinityGroup = AffinityGroup.Organisation
+          )
+
+        result.affinityType mustBe
+          AffinityGroup.Organisation.toString
+
+        result.registeringAs mustBe
+          "Individual"
+
+        result.registrationType mustBe
+          "IndividualWithoutID"
+
+        result.firstContactName mustBe
+          individualName.fullName
+
+        result.firstContactEmail mustBe
+          individualEmail
+      }
     }
   }
 

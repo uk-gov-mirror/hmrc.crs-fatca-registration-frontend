@@ -19,14 +19,13 @@ package services
 import connectors.AuditConnector
 import models.audit.AuditResult.{AuditFailed, AuditNotSent, AuditSent}
 import models.audit.{AuditResult, CreateRegistrationAuditRequest}
-import models.{Address, SubscriptionID, UserAnswers}
+import models.{Address, ReporterType, SubscriptionID, UserAnswers}
 import pages._
 import pages.changeContactDetails.{OrganisationSecondContactEmailPage, OrganisationSecondContactNamePage, OrganisationSecondContactPhonePage}
 import play.api.Logging
 import uk.gov.hmrc.auth.core.AffinityGroup
 import uk.gov.hmrc.http.HeaderCarrier
 import utils.UserAnswersHelper
-
 import javax.inject.{Inject, Singleton}
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -83,46 +82,46 @@ class AuditService @Inject() (
     userAnswers: UserAnswers,
     subscriptionId: SubscriptionID,
     affinityGroup: AffinityGroup
-  ): Option[CreateRegistrationAuditRequest] = {
-
-    val isBusiness =
-      isRegisteringAsBusiness(userAnswers)
-
-    val registrationDetails =
-      extractRegistrationDetails(
-        userAnswers = userAnswers,
-        affinityGroup = affinityGroup
-      )
-
-    val address =
-      extractAddress(
-        userAnswers = userAnswers,
-        registrationType = registrationDetails.registrationType
-      )
-
+  ): Option[CreateRegistrationAuditRequest] =
     for {
+      reporterType <- userAnswers.get(ReporterTypePage)
+
+      isOrganisation =
+        ReporterType.orgReporterTypes.contains(reporterType)
+
+      registrationDetails =
+        extractRegistrationDetails(
+          userAnswers = userAnswers,
+          isOrganisation = isOrganisation
+        )
+
+      address =
+        extractAddress(
+          userAnswers = userAnswers,
+          registrationType = registrationDetails.registrationType
+        )
+
       firstContactName <-
         extractFirstContactName(
           userAnswers = userAnswers,
-          isBusiness = isBusiness
+          isBusiness = isOrganisation
         )
 
       firstContactEmail <-
         extractFirstContactEmail(
           userAnswers = userAnswers,
-          isBusiness = isBusiness
+          isBusiness = isOrganisation
         )
     } yield createAuditRequest(
       userAnswers = userAnswers,
       subscriptionId = subscriptionId,
       affinityGroup = affinityGroup,
       registrationDetails = registrationDetails,
-      isBusiness = isBusiness,
+      isBusiness = isOrganisation,
       address = address,
       firstContactName = firstContactName,
       firstContactEmail = firstContactEmail
     )
-  }
 
   private def createAuditRequest(
     userAnswers: UserAnswers,
@@ -176,7 +175,7 @@ class AuditService @Inject() (
 
   private def extractRegistrationDetails(
     userAnswers: UserAnswers,
-    affinityGroup: AffinityGroup
+    isOrganisation: Boolean
   ): RegistrationDetails = {
 
     val autoMatchedUtr =
@@ -214,14 +213,14 @@ class AuditService @Inject() (
         )
 
       case _ =>
-        extractWithoutIdRegistrationDetails(affinityGroup)
+        extractWithoutIdRegistrationDetails(isOrganisation)
     }
   }
 
   private def extractWithoutIdRegistrationDetails(
-    affinityGroup: AffinityGroup
+    isOrganisation: Boolean
   ): RegistrationDetails =
-    if (affinityGroup == AffinityGroup.Organisation) {
+    if (isOrganisation) {
       RegistrationDetails(
         registrationType = "OrgWithoutID",
         idType = "NotProvided",
