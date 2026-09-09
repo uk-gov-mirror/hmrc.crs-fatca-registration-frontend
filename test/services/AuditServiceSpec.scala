@@ -261,7 +261,7 @@ class AuditServiceSpec
           AffinityGroup.Individual.toString
 
         result.registeringAs mustBe
-          "Individual"
+          ReporterType.Individual.toString
 
         result.registrationType mustBe
           "IndividualWithID"
@@ -323,7 +323,7 @@ class AuditServiceSpec
           AffinityGroup.Individual.toString
 
         result.registeringAs mustBe
-          "Individual"
+          ReporterType.Individual.toString
 
         result.registrationType mustBe
           "IndividualWithoutID"
@@ -411,7 +411,7 @@ class AuditServiceSpec
           AffinityGroup.Organisation.toString
 
         result.registeringAs mustBe
-          "Organisation"
+          ReporterType.LimitedCompany.toString
 
         result.registrationType mustBe
           "OrgWithID"
@@ -473,7 +473,7 @@ class AuditServiceSpec
           AffinityGroup.Organisation.toString
 
         result.registeringAs mustBe
-          "Organisation"
+          ReporterType.LimitedCompany.toString
 
         result.registrationType mustBe
           "OrgWithoutID"
@@ -564,7 +564,7 @@ class AuditServiceSpec
           AffinityGroup.Organisation.toString
 
         result.registeringAs mustBe
-          "Organisation"
+          ReporterType.LimitedCompany.toString
 
         result.registrationType mustBe
           "CTAutomatched"
@@ -584,6 +584,267 @@ class AuditServiceSpec
 
         result.fatcaId mustBe
           subscriptionId.value
+      }
+
+      "must send OrgWithID for a UK sole trader with a UTR" in {
+
+        val generatedUserAnswers =
+          sampleUserAnswers(orgWithId)
+
+        val utr =
+          generatedUserAnswers
+            .get(WhatIsYourUTRPage)
+            .value
+
+        val userAnswers =
+          emptyUserAnswers
+            .withPage(
+              ReporterTypePage,
+              ReporterType.Sole
+            )
+            .withPage(
+              RegisteredAddressInUKPage,
+              true
+            )
+            .withPage(
+              DoYouHaveUniqueTaxPayerReferencePage,
+              true
+            )
+            .withPage(
+              WhatIsYourUTRPage,
+              utr
+            )
+            .withPage(
+              ContactNamePage,
+              organisationContactName
+            )
+            .withPage(
+              ContactEmailPage,
+              organisationContactEmail
+            )
+            .withPage(
+              ContactPhonePage,
+              organisationContactPhone
+            )
+
+        val result =
+          sendAndCapture(
+            userAnswers = userAnswers,
+            affinityGroup = AffinityGroup.Individual
+          )
+
+        result.affinityType mustBe
+          AffinityGroup.Individual.toString
+
+        result.registeringAs mustBe
+          ReporterType.Sole.toString
+
+        result.registrationType mustBe
+          "OrgWithID"
+
+        result.idType mustBe
+          "UTR"
+
+        result.idValue mustBe
+          utr.uniqueTaxPayerReference
+
+        result.firstContactName mustBe
+          organisationContactName
+
+        result.firstContactEmail mustBe
+          organisationContactEmail
+
+        result.firstContactTelephone mustBe
+          Some(organisationContactPhone)
+      }
+
+      "must send IndividualWithID for a UK sole trader without a UTR who has a NINO" in {
+
+        val userAnswers =
+          emptyUserAnswers
+            .withPage(
+              ReporterTypePage,
+              ReporterType.Sole
+            )
+            .withPage(
+              RegisteredAddressInUKPage,
+              true
+            )
+            .withPage(
+              DoYouHaveUniqueTaxPayerReferencePage,
+              false
+            )
+            .withPage(
+              IndDoYouHaveNINumberPage,
+              true
+            )
+            .withPage(
+              IndWhatIsYourNINumberPage,
+              Nino("CC123456C")
+            )
+            .withPage(
+              IndWhatIsYourNamePage,
+              individualName
+            )
+            .withPage(
+              IndDateOfBirthPage,
+              individualDateOfBirth
+            )
+            .withPage(
+              IndContactEmailPage,
+              individualEmail
+            )
+            .withPage(
+              IndContactHavePhonePage,
+              true
+            )
+            .withPage(
+              IndContactPhonePage,
+              individualPhone
+            )
+
+        val result =
+          sendAndCapture(
+            userAnswers = userAnswers,
+            affinityGroup = AffinityGroup.Organisation
+          )
+
+        result.affinityType mustBe
+          AffinityGroup.Organisation.toString
+
+        result.registeringAs mustBe
+          ReporterType.Sole.toString
+
+        result.registrationType mustBe
+          "IndividualWithID"
+
+        result.idType mustBe
+          "NINO"
+
+        result.idValue mustBe
+          "CC123456C"
+
+        result.firstContactName mustBe
+          individualName.fullName
+
+        result.firstContactEmail mustBe
+          individualEmail
+
+        result.firstContactTelephone mustBe
+          Some(individualPhone)
+
+        result.dateOfBirth mustBe
+          Some("1996-03-08")
+      }
+
+      "must send IndividualWithoutID for a non-UK sole trader without a NINO" in {
+
+        val address =
+          Address(
+            addressLine1 = "1 Rue Audit",
+            addressLine2 = None,
+            addressLine3 = "Paris",
+            addressLine4 = None,
+            postCode = Some("75001"),
+            country = Country(
+              code = "FR",
+              description = "France"
+            )
+          )
+
+        val userAnswers =
+          emptyUserAnswers
+            .withPage(
+              ReporterTypePage,
+              ReporterType.Sole
+            )
+            .withPage(
+              RegisteredAddressInUKPage,
+              false
+            )
+            .withPage(
+              IndDoYouHaveNINumberPage,
+              false
+            )
+            .withPage(
+              WhatIsYourNamePage,
+              individualName
+            )
+            .withPage(
+              DateOfBirthWithoutIdPage,
+              individualDateOfBirth
+            )
+            .withPage(
+              IndWhereDoYouLivePage,
+              false
+            )
+            .withPage(
+              IndNonUKAddressWithoutIdPage,
+              address
+            )
+            .withPage(
+              IndContactEmailPage,
+              individualEmail
+            )
+            .withPage(
+              IndContactHavePhonePage,
+              true
+            )
+            .withPage(
+              IndContactPhonePage,
+              individualPhone
+            )
+
+        val result =
+          sendAndCapture(
+            userAnswers = userAnswers,
+            affinityGroup = AffinityGroup.Organisation
+          )
+
+        result.affinityType mustBe
+          AffinityGroup.Organisation.toString
+
+        result.registeringAs mustBe
+          ReporterType.Sole.toString
+
+        result.registrationType mustBe
+          "IndividualWithoutID"
+
+        result.idType mustBe
+          "NotProvided"
+
+        result.idValue mustBe
+          "NotProvided"
+
+        result.firstContactName mustBe
+          individualName.fullName
+
+        result.firstContactEmail mustBe
+          individualEmail
+
+        result.firstContactTelephone mustBe
+          Some(individualPhone)
+
+        result.dateOfBirth mustBe
+          Some("1996-03-08")
+
+        result.addressLine1 mustBe
+          Some("1 Rue Audit")
+
+        result.addressLine2 mustBe
+          None
+
+        result.city mustBe
+          Some("Paris")
+
+        result.region mustBe
+          None
+
+        result.postcode mustBe
+          Some("75001")
+
+        result.country mustBe
+          Some("FR")
       }
 
       "must populate an individual UK manually entered address" in {
@@ -773,86 +1034,6 @@ class AuditServiceSpec
         result.tradingName mustBe None
 
         result.firstContactTelephone mustBe None
-      }
-
-      "must determine organisation from reporter type rather than affinity group" in {
-
-        val address =
-          Address(
-            addressLine1 = "1 Business Street",
-            addressLine2 = Some("Business Area"),
-            addressLine3 = "Paris",
-            addressLine4 = Some("Ile-de-France"),
-            postCode = Some("75001"),
-            country = Country(
-              code = "FR",
-              description = "France"
-            )
-          )
-
-        val userAnswers =
-          organisationWithoutIdUserAnswers(address)
-
-        val result =
-          sendAndCapture(
-            userAnswers = userAnswers,
-            affinityGroup = AffinityGroup.Individual
-          )
-
-        result.affinityType mustBe
-          AffinityGroup.Individual.toString
-
-        result.registeringAs mustBe
-          "Organisation"
-
-        result.registrationType mustBe
-          "OrgWithoutID"
-
-        result.firstContactName mustBe
-          organisationContactName
-
-        result.firstContactEmail mustBe
-          organisationContactEmail
-      }
-
-      "must determine individual from reporter type rather than affinity group" in {
-
-        val address =
-          Address(
-            addressLine1 = "1 Test Street",
-            addressLine2 = Some("Test Area"),
-            addressLine3 = "London",
-            addressLine4 = None,
-            postCode = Some("AA1 1AA"),
-            country = Country.GB
-          )
-
-        val userAnswers =
-          individualWithoutIdUserAnswers(
-            address = address,
-            livesInUK = true
-          )
-
-        val result =
-          sendAndCapture(
-            userAnswers = userAnswers,
-            affinityGroup = AffinityGroup.Organisation
-          )
-
-        result.affinityType mustBe
-          AffinityGroup.Organisation.toString
-
-        result.registeringAs mustBe
-          "Individual"
-
-        result.registrationType mustBe
-          "IndividualWithoutID"
-
-        result.firstContactName mustBe
-          individualName.fullName
-
-        result.firstContactEmail mustBe
-          individualEmail
       }
     }
   }
