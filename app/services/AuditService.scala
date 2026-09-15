@@ -17,15 +17,15 @@
 package services
 
 import connectors.AuditConnector
+import models.ReporterType.{Individual, LimitedCompany, LimitedPartnership, Partnership, Sole, UnincorporatedAssociation}
 import models.audit.AuditResult.{AuditFailed, AuditNotSent, AuditSent}
 import models.audit.{AuditResult, CreateRegistrationAuditRequest}
-import models.{Address, SubscriptionID, UserAnswers}
+import models.{Address, ReporterType, SubscriptionID, UserAnswers}
 import pages._
 import pages.changeContactDetails.{OrganisationSecondContactEmailPage, OrganisationSecondContactNamePage, OrganisationSecondContactPhonePage}
 import play.api.Logging
 import uk.gov.hmrc.auth.core.AffinityGroup
 import uk.gov.hmrc.http.HeaderCarrier
-import utils.UserAnswersHelper
 
 import javax.inject.{Inject, Singleton}
 import scala.concurrent.{ExecutionContext, Future}
@@ -34,8 +34,7 @@ import scala.concurrent.{ExecutionContext, Future}
 class AuditService @Inject() (
   auditConnector: AuditConnector
 )(implicit ec: ExecutionContext)
-    extends Logging
-    with UserAnswersHelper {
+    extends Logging {
 
   private case class RegistrationDetails(
     registrationType: String,
@@ -83,100 +82,181 @@ class AuditService @Inject() (
     userAnswers: UserAnswers,
     subscriptionId: SubscriptionID,
     affinityGroup: AffinityGroup
-  ): Option[CreateRegistrationAuditRequest] = {
-
-    val isBusiness =
-      isRegisteringAsBusiness(userAnswers)
-
-    val registrationDetails =
-      extractRegistrationDetails(
-        userAnswers = userAnswers,
-        affinityGroup = affinityGroup
-      )
-
-    val address =
-      extractAddress(
-        userAnswers = userAnswers,
-        registrationType = registrationDetails.registrationType
-      )
-
+  ): Option[CreateRegistrationAuditRequest] =
     for {
+      reporterType <-
+        userAnswers.get(ReporterTypePage)
+
+      registrationDetails <-
+        extractRegistrationDetails(
+          userAnswers = userAnswers,
+          reporterType = reporterType
+        )
+
+      isOrganisationJourney =
+        isOrganisationRegistration(
+          registrationDetails
+        )
+
+      address =
+        extractAddress(
+          userAnswers = userAnswers,
+          registrationType = registrationDetails.registrationType
+        )
+
       firstContactName <-
         extractFirstContactName(
           userAnswers = userAnswers,
-          isBusiness = isBusiness
+          isOrganisationJourney = isOrganisationJourney
         )
 
       firstContactEmail <-
         extractFirstContactEmail(
           userAnswers = userAnswers,
-          isBusiness = isBusiness
+          isOrganisationJourney = isOrganisationJourney
         )
     } yield createAuditRequest(
       userAnswers = userAnswers,
       subscriptionId = subscriptionId,
       affinityGroup = affinityGroup,
+      reporterType = reporterType,
       registrationDetails = registrationDetails,
-      isBusiness = isBusiness,
+      isOrganisationJourney = isOrganisationJourney,
       address = address,
       firstContactName = firstContactName,
       firstContactEmail = firstContactEmail
     )
-  }
 
   private def createAuditRequest(
     userAnswers: UserAnswers,
     subscriptionId: SubscriptionID,
     affinityGroup: AffinityGroup,
+    reporterType: ReporterType,
     registrationDetails: RegistrationDetails,
-    isBusiness: Boolean,
+    isOrganisationJourney: Boolean,
     address: Option[Address],
     firstContactName: String,
     firstContactEmail: String
   ): CreateRegistrationAuditRequest =
     CreateRegistrationAuditRequest(
       affinityType = affinityGroup.toString,
-      registeringAs = if (isBusiness) "Organisation" else "Individual",
+      registeringAs = extractRegisteringAs(reporterType),
       registrationType = registrationDetails.registrationType,
       idType = registrationDetails.idType,
       idValue = registrationDetails.idValue,
       tradingName = extractTradingName(userAnswers),
       businessName = extractBusinessName(userAnswers),
-      addressLine1 =
-        address
-          .map(_.addressLine1)
-          .flatMap(optionalNonEmpty),
-      addressLine2 =
-        address
-          .flatMap(_.addressLine2)
-          .flatMap(optionalNonEmpty),
-      city =
-        address
-          .map(_.addressLine3)
-          .flatMap(optionalNonEmpty),
-      region =
-        address
-          .flatMap(_.addressLine4)
-          .flatMap(optionalNonEmpty),
+      addressLine1 = address.map(_.addressLine1).flatMap(optionalNonEmpty),
+      addressLine2 = address.flatMap(_.addressLine2).flatMap(optionalNonEmpty),
+      city = address.map(_.addressLine3).flatMap(optionalNonEmpty),
+      region = address.flatMap(_.addressLine4).flatMap(optionalNonEmpty),
       postcode = address.flatMap(_.postCode).flatMap(optionalNonEmpty),
       country = address.map(_.country.code).flatMap(optionalNonEmpty),
-      uprn = extractUprn(
-        userAnswers = userAnswers,
-        registrationType = registrationDetails.registrationType
-      ),
+      uprn = extractUprn(userAnswers = userAnswers, registrationType = registrationDetails.registrationType),
       dateOfBirth = extractDateOfBirth(userAnswers),
       firstContactName = firstContactName,
       firstContactEmail = firstContactEmail,
-      firstContactTelephone = extractFirstContactTelephone(userAnswers = userAnswers, isBusiness = isBusiness),
+      firstContactTelephone = extractFirstContactTelephone(userAnswers = userAnswers, isOrganisationJourney = isOrganisationJourney),
       secondContactName = extractSecondContactName(userAnswers),
       secondContactEmail = extractSecondContactEmail(userAnswers),
       secondContactTelephone = extractSecondContactTelephone(userAnswers),
       fatcaId = subscriptionId.value
     )
 
+  private def extractRegisteringAs(
+    reporterType: ReporterType
+  ): String =
+    reporterType.toString
+
   private def extractRegistrationDetails(
     userAnswers: UserAnswers,
-    affinityGroup: AffinityGroup
+    reporterType: ReporterType
+  ): Option[RegistrationDetails] =
+    reporterType match {
+      case Individual =>
+        Some(
+          extractIndividualRegistrationDetails(
+            userAnswers
+          )
+        )
+
+      case Sole =>
+        extractSoleTraderRegistrationDetails(
+          userAnswers
+        )
+
+      case LimitedCompany |
+          Partnership |
+          LimitedPartnership |
+          UnincorporatedAssociation =>
+        Some(
+          extractOrganisationRegistrationDetails(
+            userAnswers
+          )
+        )
+    }
+
+  private def extractIndividualRegistrationDetails(
+    userAnswers: UserAnswers
+  ): RegistrationDetails =
+    extractNino(userAnswers) match {
+      case Some(value) =>
+        RegistrationDetails(
+          registrationType = "IndividualWithID",
+          idType = "NINO",
+          idValue = value
+        )
+
+      case None =>
+        RegistrationDetails(
+          registrationType = "IndividualWithoutID",
+          idType = "NotProvided",
+          idValue = "NotProvided"
+        )
+    }
+
+  private def extractSoleTraderRegistrationDetails(
+    userAnswers: UserAnswers
+  ): Option[RegistrationDetails] = {
+
+    val registeredInUK =
+      userAnswers.get(RegisteredAddressInUKPage)
+
+    val hasUtr =
+      userAnswers.get(DoYouHaveUniqueTaxPayerReferencePage)
+
+    (registeredInUK, hasUtr) match {
+      case (Some(true), Some(true)) =>
+        extractUtr(userAnswers).map {
+          value =>
+            RegistrationDetails(
+              registrationType = "OrgWithID",
+              idType = "UTR",
+              idValue = value
+            )
+        }
+
+      case (Some(true), Some(false)) =>
+        Some(
+          extractIndividualRegistrationDetails(
+            userAnswers
+          )
+        )
+
+      case (Some(false), _) =>
+        Some(
+          extractIndividualRegistrationDetails(
+            userAnswers
+          )
+        )
+
+      case _ =>
+        None
+    }
+  }
+
+  private def extractOrganisationRegistrationDetails(
+    userAnswers: UserAnswers
   ): RegistrationDetails = {
 
     val autoMatchedUtr =
@@ -185,28 +265,18 @@ class AuditService @Inject() (
         .map(_.uniqueTaxPayerReference)
         .flatMap(optionalNonEmpty)
 
-    val nino =
-      extractNino(userAnswers)
-
     val utr =
       extractUtr(userAnswers)
 
-    (autoMatchedUtr, nino, utr) match {
-      case (Some(value), _, _) =>
+    (autoMatchedUtr, utr) match {
+      case (Some(value), _) =>
         RegistrationDetails(
           registrationType = "CTAutomatched",
           idType = "UTR",
           idValue = value
         )
 
-      case (None, Some(value), _) =>
-        RegistrationDetails(
-          registrationType = "IndividualWithID",
-          idType = "NINO",
-          idValue = value
-        )
-
-      case (None, None, Some(value)) =>
+      case (None, Some(value)) =>
         RegistrationDetails(
           registrationType = "OrgWithID",
           idType = "UTR",
@@ -214,25 +284,25 @@ class AuditService @Inject() (
         )
 
       case _ =>
-        extractWithoutIdRegistrationDetails(affinityGroup)
+        RegistrationDetails(
+          registrationType = "OrgWithoutID",
+          idType = "NotProvided",
+          idValue = "NotProvided"
+        )
     }
   }
 
-  private def extractWithoutIdRegistrationDetails(
-    affinityGroup: AffinityGroup
-  ): RegistrationDetails =
-    if (affinityGroup == AffinityGroup.Organisation) {
-      RegistrationDetails(
-        registrationType = "OrgWithoutID",
-        idType = "NotProvided",
-        idValue = "NotProvided"
-      )
-    } else {
-      RegistrationDetails(
-        registrationType = "IndividualWithoutID",
-        idType = "NotProvided",
-        idValue = "NotProvided"
-      )
+  private def isOrganisationRegistration(
+    registrationDetails: RegistrationDetails
+  ): Boolean =
+    registrationDetails.registrationType match {
+      case "OrgWithID" |
+          "OrgWithoutID" |
+          "CTAutomatched" =>
+        true
+
+      case _ =>
+        false
     }
 
   private def extractNino(
@@ -281,9 +351,9 @@ class AuditService @Inject() (
 
   private def extractFirstContactName(
     userAnswers: UserAnswers,
-    isBusiness: Boolean
+    isOrganisationJourney: Boolean
   ): Option[String] =
-    if (isBusiness) {
+    if (isOrganisationJourney) {
       userAnswers
         .get(ContactNamePage)
         .flatMap(optionalNonEmpty)
@@ -299,9 +369,9 @@ class AuditService @Inject() (
 
   private def extractFirstContactEmail(
     userAnswers: UserAnswers,
-    isBusiness: Boolean
+    isOrganisationJourney: Boolean
   ): Option[String] =
-    if (isBusiness) {
+    if (isOrganisationJourney) {
       userAnswers
         .get(ContactEmailPage)
         .flatMap(optionalNonEmpty)
@@ -313,9 +383,9 @@ class AuditService @Inject() (
 
   private def extractFirstContactTelephone(
     userAnswers: UserAnswers,
-    isBusiness: Boolean
+    isOrganisationJourney: Boolean
   ): Option[String] =
-    if (isBusiness) {
+    if (isOrganisationJourney) {
       userAnswers
         .get(ContactPhonePage)
         .flatMap(optionalNonEmpty)
